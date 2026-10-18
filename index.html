@@ -50,6 +50,13 @@
   .btnrow { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
   #adMsg { color: #ff9aa8; font-size: 14px; min-height: 18px; }
   .keyhint { font-size: 13px; color: #7d92b8; }
+  .diffrow { display: flex; gap: 8px; align-items: center; justify-content: center; }
+  .diffbtn {
+    width: 44px; height: 44px; border-radius: 50%; font-size: 18px; font-weight: 700;
+    background: #334; color: #e8f0ff; border: 2px solid #4cc9f0; cursor: pointer;
+  }
+  .diffbtn:hover { background: #445; }
+  .diffbtn.on { background: #ffb347 !important; color: #22160a !important; }
 </style>
 </head>
 <body>
@@ -66,9 +73,17 @@
         ✏️ <b>Hold &amp; drag</b> to draw floors (blue lines)<br>
         🔴 The ball <b>falls without a floor</b> — gravity never sleeps!<br>
         🎯 Guide the ball into the <b>green target</b> to score<br>
-        ❤️ 3 lives — don't let the ball drop off the bottom!<br>
         💡 One stroke = limited ink (watch the ink bar)
       </div>
+      <div class="diffrow">
+        <span style="font-size:14px;color:#9fb6dd">ZORLUK:</span>
+        <button class="diffbtn" data-i="0">1</button>
+        <button class="diffbtn" data-i="1">2</button>
+        <button class="diffbtn" data-i="2">3</button>
+        <button class="diffbtn" data-i="3">4</button>
+        <button class="diffbtn" data-i="4">5</button>
+      </div>
+      <div id="diffLbl" style="font-size:14px;color:#ffd166;font-weight:700"></div>
       <button class="green" id="playBtn">▶ PLAY</button>
       <button class="blue" id="startAdBtn">📺 Watch Ad · Start with +1 Life</button>
       <div id="startMsg" style="color:#ff9aa8;font-size:14px;min-height:18px"></div>
@@ -89,6 +104,7 @@
   </div>
 
   <div id="hud">
+    <span id="diffHud"></span>
     <span>🎯 Score: <b id="score">0</b></span>
     <span>⭐ Best: <b id="best">0</b></span>
     <span id="comboLbl"></span>
@@ -169,17 +185,27 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const W = canvas.width, H = canvas.height;
 
-const GRAVITY = 0.35;
-const MAX_FALL = 16;
-const MAX_STROKE = 380;
+/* ══════ 5 ZORLUK SEVİYESİ (yavaş → hızlı) ══════ */
+const DIFFS = [
+  { name: '1 · Very Easy', g: 0.12, target: 30, ink: 520, lives: 5, mult: 1 },
+  { name: '2 · Easy',      g: 0.17, target: 26, ink: 460, lives: 4, mult: 1 },
+  { name: '3 · Normal',    g: 0.22, target: 22, ink: 400, lives: 3, mult: 2 },
+  { name: '4 · Hard',      g: 0.28, target: 18, ink: 340, lives: 3, mult: 3 },
+  { name: '5 · Expert',    g: 0.36, target: 15, ink: 280, lives: 2, mult: 5 },
+];
+let diffIndex = 1;              // varsayılan: Easy (sakin akış)
+const MAX_FALL = 14;            // maksimum düşüş hızı (daha kontrollü)
 const REST = 0.35;
-let gravity = GRAVITY; // seviye arttıkça artar
+let gravity = DIFFS[1].g;       // yerçekimi (seviye arttıkça artar)
+let inkMax = DIFFS[1].ink;      // tur başına mürekkep
 
 let ball, lines, score, lives, state; // state: 'menu' | 'playing' | 'over'
 let particles, goal;
 let drawing = false, strokeLen = 0, lastPt = null;
 let best = 0;
-try { best = +localStorage.getItem('dtfBest') || 0; } catch (e) {}
+function loadBest() { try { best = +localStorage.getItem('dtfBest_' + diffIndex) || 0; } catch (e) { best = 0; } }
+function saveBest() { try { localStorage.setItem('dtfBest_' + diffIndex, best); } catch (e) {} }
+loadBest();
 
 /* ── PARA STRATEJİSİ: combo + seviye + ses ── */
 let combo = 0, level = 1, floaters = [], paused = false;
@@ -204,24 +230,28 @@ function floater(x, y, text, color) { floaters.push({ x, y, text, color, life: 1
 const $ = id => document.getElementById(id);
 
 function reset() {
-  score = 0; lives = bonusLife ? 4 : 3;
+  const d = DIFFS[diffIndex];
+  score = 0; lives = d.lives + (bonusLife ? 1 : 0);
   bonusLife = false;
   lines = []; particles = []; floaters = [];
-  combo = 0; level = 1; gravity = GRAVITY; doubleUsed = false;
+  combo = 0; level = 1; gravity = d.g; inkMax = d.ink; doubleUsed = false;
   spawnBall();
   newGoal();
+  loadBest();
   hud();
 }
 function spawnBall() {
   ball = { x: 80 + Math.random() * (W - 160), y: 50, vx: (Math.random() - 0.5) * 3, vy: 0, r: 13 };
 }
 function newGoal() {
-  goal = { x: 90 + Math.random() * (W - 180), y: 130 + Math.random() * (H - 280), r: 20 };
+  goal = { x: 90 + Math.random() * (W - 180), y: 130 + Math.random() * (H - 280), r: DIFFS[diffIndex].target };
 }
 function hud() {
   $('score').textContent = score;
   $('best').textContent = best;
   $('menuBest').textContent = best;
+  const d = DIFFS[diffIndex];
+  if ($('diffHud')) $('diffHud').textContent = '🎚 ' + d.name;
   $('lives').textContent = '❤️'.repeat(lives) + '🖤'.repeat(Math.max(0, 3 - lives));
   $('finalScore').textContent = score;
   $('finalBest').textContent = best;
@@ -278,25 +308,26 @@ function update() {
   // 🎯 hedefe ulaştı mı?
   if (Math.hypot(ball.x - goal.x, ball.y - goal.y) < goal.r + ball.r - 4) {
     combo++;
-    const mult = Math.min(5, 1 + Math.floor(combo / 3)); // x1..x5 çarpan
+    const d = DIFFS[diffIndex];
+    const mult = Math.min(5, 1 + Math.floor(combo / 3)) * d.mult; // combo × zorluk çarpanı
     score += mult;
     burst(goal.x, goal.y, '#7bf1a8');
     floater(goal.x, goal.y - 30, '+' + mult, '#7bf1a8');
     beep(660, 0.12, 'sine', 0.07);
-    // seviye atlama: her 5 hedef → zorluk artar (retention)
+    // seviye atlama: her 5 hedef → yerçekimi yavaşça artar (retention)
     if (combo % 5 === 0) {
       level++;
-      gravity = Math.min(0.6, 0.35 + level * 0.02);
+      gravity = Math.min(d.g + 0.20, gravity + 0.015);
       floater(W / 2, H / 2, 'LEVEL ' + level + '!', '#ffd166');
       beep(880, 0.25, 'triangle', 0.09);
       happytime();
     }
     newGoal();
     reportProgress(Math.min(100, score));
-    setContext({ score: score, level: level, combo: combo });
+    setContext({ score: score, level: level, combo: combo, difficulty: d.name });
     if (score > best) {
       best = score;
-      try { localStorage.setItem('dtfBest', best); } catch (e) {}
+      saveBest();
     }
     hud();
   }
@@ -350,11 +381,11 @@ function moveStroke(x, y) {
   if (!drawing) return;
   const p = { x, y };
   const d = Math.hypot(p.x - lastPt.x, p.y - lastPt.y);
-  if (d >= 6 && strokeLen < MAX_STROKE) {
+  if (d >= 6 && strokeLen < inkMax) {
     lines.push({ x1: lastPt.x, y1: lastPt.y, x2: p.x, y2: p.y });
     strokeLen += d;
     lastPt = p;
-    $('inkFill').style.width = Math.max(0, 100 - (strokeLen / MAX_STROKE) * 100) + '%';
+    $('inkFill').style.width = Math.max(0, 100 - (strokeLen / inkMax) * 100) + '%';
   }
 }
 function endStroke() {
@@ -394,6 +425,24 @@ function startGame() {
 $('playBtn').addEventListener('click', startGame);
 $('againBtn').addEventListener('click', startGame);
 
+/* ── 5 zorluk seviyesi seçimi ── */
+function updateDiffUI() {
+  const d = DIFFS[diffIndex];
+  document.querySelectorAll('.diffbtn').forEach(b => b.classList.toggle('on', +b.dataset.i === diffIndex));
+  const lbl = $('diffLbl');
+  if (lbl) lbl.textContent = d.name + ' — ❤️ ' + d.lives + ' can · 🎯 hedef ' + d.target + 'px · 💰 x' + d.mult;
+  hud();
+}
+document.querySelectorAll('.diffbtn').forEach(b => {
+  b.addEventListener('click', () => {
+    diffIndex = +b.dataset.i;
+    gravity = DIFFS[diffIndex].g;
+    inkMax = DIFFS[diffIndex].ink;
+    beep(520, 0.08, 'sine', 0.05);
+    updateDiffUI();
+  });
+});
+
 $('startAdBtn').addEventListener('click', () => {
   if (startLifeUsed) return;
   $('startMsg').textContent = '';
@@ -422,7 +471,7 @@ $('doubleBtn').addEventListener('click', () => {
     if (err) { $('adMsg').textContent = '⚠️ Ad not available right now. Try again!'; return; }
     doubleUsed = true;
     score *= 2;
-    if (score > best) { best = score; try { localStorage.setItem('dtfBest', best); } catch (e) {} }
+    if (score > best) { best = score; saveBest(); }
     hud();
     $('doubleBtn').style.display = 'none';
     $('adMsg').textContent = '✨ Score doubled to ' + score + '!';
@@ -574,6 +623,7 @@ function loop() {
 
 reset();
 state = 'menu';
+updateDiffUI();
 hud();
 loop();
 </script>
