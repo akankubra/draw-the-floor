@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Draw the Floor!</title>
+<!-- CrazyGames SDK v3 -->
+<script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(circle at 50% 15%, #1b2a4a, #0a0f1e);
+    font-family: 'Segoe UI', system-ui, sans-serif; color: #e8f0ff;
+    -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none;
+  }
+  h1 { margin: 8px 0 2px; font-size: 28px; letter-spacing: 1px; }
+  p.sub { margin: 0 0 10px; color: #9fb6dd; font-size: 14px; }
+  .wrap { position: relative; max-width: 96vw; }
+  canvas {
+    border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.6);
+    background: #0d1730; display: block; cursor: crosshair;
+    touch-action: none; width: 100%; height: auto;
+  }
+  #hud {
+    display: flex; gap: 24px; justify-content: space-between; align-items: center;
+    width: 800px; max-width: 96vw; margin-top: 10px; font-size: 16px; font-weight: 600;
+  }
+  #inkBar { width: 120px; height: 12px; background: #223; border-radius: 6px; overflow: hidden; display: inline-block; vertical-align: middle; }
+  #inkFill { height: 100%; width: 100%; background: #4cc9f0; border-radius: 6px; }
+  .overlay {
+    position: absolute; inset: 0; border-radius: 14px;
+    background: rgba(5,8,18,.88); backdrop-filter: blur(4px);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; text-align: center; padding: 20px;
+  }
+  .overlay h2 { margin: 0; font-size: 34px; }
+  .overlay .info { font-size: 17px; line-height: 1.7; color: #cdd9f0; max-width: 520px; }
+  .overlay .big { font-size: 20px; line-height: 1.7; }
+  button {
+    background: #ffb347; border: none; color: #22160a; font-weight: 700;
+    padding: 12px 28px; font-size: 16px; border-radius: 12px; cursor: pointer;
+  }
+  button:hover { background: #ffc773; }
+  button.blue { background: #4cc9f0; color: #06283a; }
+  button.blue:hover { background: #7dd8f5; }
+  button.green { background: #7bf1a8; color: #06281a; }
+  button.green:hover { background: #a5f7c6; }
+  .btnrow { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  #adMsg { color: #ff9aa8; font-size: 14px; min-height: 18px; }
+  .keyhint { font-size: 13px; color: #7d92b8; }
+</style>
+</head>
+<body>
+  <h1>🖊️ DRAW THE FLOOR!</h1>
+  <p class="sub">Draw floors with your mouse or finger. The ball falls without a floor — guide it to the 🎯 target!</p>
+
+  <div class="wrap">
+    <canvas id="game" width="800" height="600"></canvas>
+
+    <!-- START SCREEN -->
+    <div class="overlay" id="startScreen">
+      <h2>🖊️ DRAW THE FLOOR!</h2>
+      <div class="info">
+        ✏️ <b>Hold &amp; drag</b> to draw floors (blue lines)<br>
+        🔴 The ball <b>falls without a floor</b> — gravity never sleeps!<br>
+        🎯 Guide the ball into the <b>green target</b> to score<br>
+        ❤️ 3 lives — don't let the ball drop off the bottom!<br>
+        💡 One stroke = limited ink (watch the ink bar)
+      </div>
+      <button class="green" id="playBtn">▶ PLAY</button>
+      <button class="blue" id="startAdBtn">📺 Watch Ad · Start with +1 Life</button>
+      <div id="startMsg" style="color:#ff9aa8;font-size:14px;min-height:18px"></div>
+      <div class="keyhint">Best score: <b id="menuBest">0</b> · R = restart</div>
+    </div>
+
+    <!-- GAME OVER SCREEN -->
+    <div class="overlay" id="overScreen" style="display:none">
+      <h2>💥 GAME OVER</h2>
+      <div class="big">Score: <b style="color:#7bf1a8" id="finalScore">0</b><br>Best: ⭐ <span id="finalBest">0</span></div>
+      <div class="btnrow">
+        <button class="blue" id="adBtn">📺 Watch Ad · +1 Life</button>
+        <button class="blue" id="doubleBtn">✨ Watch Ad · 2x Score</button>
+        <button class="green" id="againBtn">▶ Play Again</button>
+      </div>
+      <div id="adMsg"></div>
+    </div>
+  </div>
+
+  <div id="hud">
+    <span>🎯 Score: <b id="score">0</b></span>
+    <span>⭐ Best: <b id="best">0</b></span>
+    <span id="comboLbl"></span>
+    <span>Ink: <span id="inkBar"><span id="inkFill"></span></span></span>
+    <span id="lives">❤️❤️❤️</span>
+    <button id="pauseBtn" style="background:#223;color:#e8f0ff;border:none;border-radius:8px;padding:4px 10px;cursor:pointer;">⏸ Pause</button>
+  </div>
+
+  <!-- Reklam alanı (banner) — sadece menü ve oyun sonu ekranlarında görünür -->
+  <div id="bannerZone" style="display:none; margin-top:10px; min-height:250px; width:300px;"></div>
+
+<script>
+'use strict';
+/* ═══════════ CRAZYGAMES SDK WRAPPER ═══════════ */
+let sdk = null, sdkReady = false, adPlaying = false;
+
+async function initSDK() {
+  try {
+    if (window.CrazyGames && window.CrazyGames.SDK) {
+      if (sdk.game && sdk.game.loadingStart) { try { sdk.game.loadingStart(); } catch (e) {} }
+      await window.CrazyGames.SDK.init();
+      sdk = window.CrazyGames.SDK;
+      sdkReady = (sdk.environment !== 'disabled');
+      if (sdk.game && sdk.game.loadingStop) { try { sdk.game.loadingStop(); } catch (e) {} }
+      // CrazyGames "muteAudio" ayarına uy
+      try {
+        muted = !!(sdk.game.settings && sdk.game.settings.muteAudio);
+        if (sdk.game.addSettingsChangeListener) {
+          sdk.game.addSettingsChangeListener(s => { muted = !!(s && s.muteAudio); });
+        }
+      } catch (e) {}
+    }
+  } catch (e) { /* SDK yoksa oyun yine çalışır */ }
+  // SDK yoksa (ör. itch.io, dosya://) reklam butonlarını gizle
+  if (!sdkReady) {
+    const b = $('adBtn'); if (b) b.style.display = 'none';
+    const d = $('doubleBtn'); if (d) d.style.display = 'none';
+    const s = $('startAdBtn'); if (s) s.style.display = 'none';
+  } else {
+    showBanner(); // menüde banner otomatik görünür
+  }
+}
+function cg(fn, arg) { if (sdkReady && sdk.game && sdk.game[fn]) { try { sdk.game[fn](arg); } catch (e) {} } }
+const gameplayStart = () => cg('gameplayStart');
+const gameplayStop = () => cg('gameplayStop');const happytime = () => cg('happytime');
+const reportProgress = (p) => cg('reportGameCompletedPercentage', p);
+const setContext = (o) => cg('setGameContext', o);
+
+function requestAd(type, onFinished) {
+  if (!sdkReady || !sdk.ad) return false;
+  try {
+    sdk.ad.requestAd(type, {
+      adStarted: () => { adPlaying = true; },
+      adFinished: () => { adPlaying = false; onFinished && onFinished(); },
+      adError: () => { adPlaying = false; onFinished && onFinished(true); }
+    });
+    return true;
+  } catch (e) { return false; }
+}
+
+/* ── Banner reklamları: menü ve oyun sonu ekranlarında otomatik ── */
+async function showBanner() {
+  if (!sdkReady || !sdk.banner) return;
+  try {
+    const zone = $('bannerZone');
+    zone.style.display = 'block';
+    await sdk.banner.requestResponsiveBanner('bannerZone');
+  } catch (e) { /* unfilled/bannerCooldown — sessizce geç */ }
+}
+function hideBanner() {
+  try { $('bannerZone').style.display = 'none'; } catch (e) {}
+  if (!sdkReady || !sdk.banner) return;
+  try { sdk.banner.clearAllBanners(); } catch (e) {}
+}
+
+/* ═══════════ OYUN ═══════════ */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+const GRAVITY = 0.35;
+const MAX_FALL = 16;
+const MAX_STROKE = 380;
+const REST = 0.35;
+let gravity = GRAVITY; // seviye arttıkça artar
+
+let ball, lines, score, lives, state; // state: 'menu' | 'playing' | 'over'
+let particles, goal;
+let drawing = false, strokeLen = 0, lastPt = null;
+let best = 0;
+try { best = +localStorage.getItem('dtfBest') || 0; } catch (e) {}
+
+/* ── PARA STRATEJİSİ: combo + seviye + ses ── */
+let combo = 0, level = 1, floaters = [], paused = false;
+let muted = false, lastMidgameAd = 0, doubleUsed = false;
+let bonusLife = false, startLifeUsed = false;
+let audioCtx = null;
+function initAudio() { if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } }
+function beep(freq, dur, type, vol) {
+  if (!audioCtx || muted) return;
+  try {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type || 'sine'; o.frequency.value = freq;
+    g.gain.value = vol || 0.06;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+    o.stop(audioCtx.currentTime + dur);
+  } catch (e) {}
+}
+function floater(x, y, text, color) { floaters.push({ x, y, text, color, life: 1 }); }
+
+const $ = id => document.getElementById(id);
+
+function reset() {
+  score = 0; lives = bonusLife ? 4 : 3;
+  bonusLife = false;
+  lines = []; particles = []; floaters = [];
+  combo = 0; level = 1; gravity = GRAVITY; doubleUsed = false;
+  spawnBall();
+  newGoal();
+  hud();
+}
+function spawnBall() {
+  ball = { x: 80 + Math.random() * (W - 160), y: 50, vx: (Math.random() - 0.5) * 3, vy: 0, r: 13 };
+}
+function newGoal() {
+  goal = { x: 90 + Math.random() * (W - 180), y: 130 + Math.random() * (H - 280), r: 20 };
+}
+function hud() {
+  $('score').textContent = score;
+  $('best').textContent = best;
+  $('menuBest').textContent = best;
+  $('lives').textContent = '❤️'.repeat(lives) + '🖤'.repeat(Math.max(0, 3 - lives));
+  $('finalScore').textContent = score;
+  $('finalBest').textContent = best;
+  const mult = Math.min(5, 1 + Math.floor(combo / 3));
+  $('comboLbl').innerHTML = mult > 1 ? '<b style="color:#ffd166">🔥 x' + mult + '</b>' : '';
+}
+function burst(x, y, color) {
+  for (let i = 0; i < 16; i++) {
+    const a = Math.random() * Math.PI * 2, s = 2 + Math.random() * 5;
+    particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 2, life: 1, color, size: 2 + Math.random() * 3 });
+  }
+}
+
+/* ── çember - çizgi çarpışması ── */
+function collide(b, s) {
+  const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 0.001) return;
+  let t = ((b.x - s.x1) * dx + (b.y - s.y1) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  const cx = s.x1 + t * dx, cy = s.y1 + t * dy;
+  const ox = b.x - cx, oy = b.y - cy;
+  const d = Math.hypot(ox, oy);
+  if (d < b.r && d > 0.0001) {
+    const nx = ox / d, ny = oy / d;
+    b.x = cx + nx * b.r;
+    b.y = cy + ny * b.r;
+    const vn = b.vx * nx + b.vy * ny;
+    if (vn < 0) {
+      const tx = b.vx - vn * nx, ty = b.vy - vn * ny;
+      b.vx = tx * 0.995 - vn * nx * REST;
+      b.vy = ty * 0.995 - vn * ny * REST;
+    }
+  }
+}
+
+function physicsStep() {
+  ball.vy = Math.min(ball.vy + gravity, MAX_FALL);
+  ball.x += ball.vx;
+  ball.y += ball.vy;
+  if (ball.x < ball.r)     { ball.x = ball.r;     ball.vx =  Math.abs(ball.vx) * 0.6; }
+  if (ball.x > W - ball.r) { ball.x = W - ball.r; ball.vx = -Math.abs(ball.vx) * 0.6; }
+  if (ball.y < ball.r)     { ball.y = ball.r;     ball.vy =  Math.abs(ball.vy) * 0.5; }
+  for (const s of lines) collide(ball, s);
+  ball.vx *= 0.998;
+}
+
+function update() {
+  if (state !== 'playing' || adPlaying || paused) return;
+
+  physicsStep();
+  physicsStep();
+
+  // 🎯 hedefe ulaştı mı?
+  if (Math.hypot(ball.x - goal.x, ball.y - goal.y) < goal.r + ball.r - 4) {
+    combo++;
+    const mult = Math.min(5, 1 + Math.floor(combo / 3)); // x1..x5 çarpan
+    score += mult;
+    burst(goal.x, goal.y, '#7bf1a8');
+    floater(goal.x, goal.y - 30, '+' + mult, '#7bf1a8');
+    beep(660, 0.12, 'sine', 0.07);
+    // seviye atlama: her 5 hedef → zorluk artar (retention)
+    if (combo % 5 === 0) {
+      level++;
+      gravity = Math.min(0.6, 0.35 + level * 0.02);
+      floater(W / 2, H / 2, 'LEVEL ' + level + '!', '#ffd166');
+      beep(880, 0.25, 'triangle', 0.09);
+      happytime();
+    }
+    newGoal();
+    reportProgress(Math.min(100, score));
+    setContext({ score: score, level: level, combo: combo });
+    if (score > best) {
+      best = score;
+      try { localStorage.setItem('dtfBest', best); } catch (e) {}
+    }
+    hud();
+  }
+
+  // ⬇️ taban yoksa düştü!
+  if (ball.y - ball.r > H) {
+    burst(ball.x, H - 8, '#ef476f');
+    beep(140, 0.4, 'sawtooth', 0.1);
+    combo = 0; // combo sıfırlanır → stres, tekrar oynama isteği
+    lives--;
+    hud();
+    if (lives <= 0) {
+      gameOver();
+    } else {
+      spawnBall();
+    }
+  }
+
+  for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vy += 0.15; p.life -= 0.03; }
+  particles = particles.filter(p => p.life > 0);
+  for (const f of floaters) { f.y -= 1.1; f.life -= 0.016; }
+  floaters = floaters.filter(f => f.life > 0);
+}
+
+function gameOver() {
+  state = 'over';
+  gameplayStop();
+  $('overScreen').style.display = 'flex';
+  $('adMsg').textContent = '';
+  $('doubleBtn').style.display = '';
+  beep(200, 0.5, 'sawtooth', 0.12);
+  showBanner(); // banner: menü/özet ekranlarında (en iyi uygulama)
+  // midgame reklamı: 3 dk bekleme kuralına uy (CrazyGames reklam ritmi)
+  const now = Date.now();
+  if (now - lastMidgameAd > 180000) {
+    lastMidgameAd = now;
+    requestAd('midgame');
+  }
+}
+
+/* ── ÇİZİM: fare / dokunma ile taban çiz ── */
+function canvasPos(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (clientX - r.left) * (W / r.width), y: (clientY - r.top) * (H / r.height) };
+}
+function startStroke(x, y) {
+  if (state !== 'playing' || adPlaying) return;
+  drawing = true; strokeLen = 0; lastPt = { x, y };
+}
+function moveStroke(x, y) {
+  if (!drawing) return;
+  const p = { x, y };
+  const d = Math.hypot(p.x - lastPt.x, p.y - lastPt.y);
+  if (d >= 6 && strokeLen < MAX_STROKE) {
+    lines.push({ x1: lastPt.x, y1: lastPt.y, x2: p.x, y2: p.y });
+    strokeLen += d;
+    lastPt = p;
+    $('inkFill').style.width = Math.max(0, 100 - (strokeLen / MAX_STROKE) * 100) + '%';
+  }
+}
+function endStroke() {
+  drawing = false;
+  $('inkFill').style.width = '100%';
+}
+
+canvas.addEventListener('mousedown', e => { const p = canvasPos(e.clientX, e.clientY); startStroke(p.x, p.y); });
+canvas.addEventListener('mousemove', e => { const p = canvasPos(e.clientX, e.clientY); moveStroke(p.x, p.y); });
+addEventListener('mouseup', endStroke);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); const t = e.touches[0]; const p = canvasPos(t.clientX, t.clientY); startStroke(p.x, p.y); }, { passive: false });
+canvas.addEventListener('touchmove', e => { e.preventDefault(); const t = e.touches[0]; const p = canvasPos(t.clientX, t.clientY); moveStroke(p.x, p.y); }, { passive: false });
+canvas.addEventListener('touchend', endStroke);
+
+/* ── KLAVYE ── */
+addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R') { startGame(); }
+  if (e.key === 'Enter') {
+    if (state === 'menu') startGame();
+    else if (state === 'over') startGame();
+  }
+});
+
+/* ── DURUM GEÇİŞLERİ ── */
+function startGame() {
+  reset();
+  state = 'playing';
+  paused = false;
+  $('pauseBtn').textContent = '⏸ Pause';
+  initAudio();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  hideBanner(); // oyun içi banner yok — oynama alanı temiz kalsın
+  $('startScreen').style.display = 'none';
+  $('overScreen').style.display = 'none';
+  gameplayStart();
+}
+$('playBtn').addEventListener('click', startGame);
+$('againBtn').addEventListener('click', startGame);
+
+$('startAdBtn').addEventListener('click', () => {
+  if (startLifeUsed) return;
+  $('startMsg').textContent = '';
+  const ok = requestAd('rewarded', (err) => {
+    adPlaying = false;
+    if (err) { $('startMsg').textContent = '⚠️ Ad not available right now. Try again!'; return; }
+    startLifeUsed = true;
+    $('startAdBtn').style.display = 'none';
+    bonusLife = true; // reset() 4 can verecek
+    startGame();
+  });
+  if (!ok) $('startMsg').textContent = '⚠️ Ads not available in this environment.';
+});
+
+$('pauseBtn').addEventListener('click', () => {
+  if (state !== 'playing') return;
+  paused = !paused;
+  if (paused) { gameplayStop(); $('pauseBtn').textContent = '▶ Resume'; }
+  else { gameplayStart(); $('pauseBtn').textContent = '⏸ Pause'; }
+});
+
+$('doubleBtn').addEventListener('click', () => {
+  if (doubleUsed) return;
+  $('adMsg').textContent = '';
+  const ok = requestAd('rewarded', (err) => {
+    if (err) { $('adMsg').textContent = '⚠️ Ad not available right now. Try again!'; return; }
+    doubleUsed = true;
+    score *= 2;
+    if (score > best) { best = score; try { localStorage.setItem('dtfBest', best); } catch (e) {} }
+    hud();
+    $('doubleBtn').style.display = 'none';
+    $('adMsg').textContent = '✨ Score doubled to ' + score + '!';
+  });
+  if (!ok) $('adMsg').textContent = '⚠️ Ads not available in this environment.';
+});
+
+$('adBtn').addEventListener('click', () => {
+  $('adMsg').textContent = '';
+  const requested = requestAd('rewarded', (errored) => {
+    if (errored) {
+      $('adMsg').textContent = '⚠️ Ad not available right now. Try again!';
+      return;
+    }
+    // ödül: +1 can
+    lives = 1;
+    spawnBall();
+    state = 'playing';
+    $('overScreen').style.display = 'none';
+    hud();
+    gameplayStart();
+  });
+  if (!requested) $('adMsg').textContent = '⚠️ Ads not available in this environment.';
+});
+
+initSDK(); // SDK başlatma (DOM helper'ları tanımlandıktan sonra)
+
+/* ┐ GÖRSEL ── */
+function roundRectPath(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function draw() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#131f3d'); g.addColorStop(1, '#0a1128');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  for (let y = 60; y < H; y += 60) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // tehlane bölgesi (taban yok!)
+  const danger = ctx.createLinearGradient(0, H - 70, 0, H);
+  danger.addColorStop(0, 'rgba(239,71,111,0)');
+  danger.addColorStop(1, 'rgba(239,71,111,.35)');
+  ctx.fillStyle = danger; ctx.fillRect(0, H - 70, W, 70);
+  ctx.fillStyle = 'rgba(239,71,111,.75)';
+  ctx.font = 'bold 15px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('🕳️ NO FLOOR BELOW — YOU WILL FALL!', W / 2, H - 16);
+
+  // çizilmiş tabanlar
+  ctx.save();
+  ctx.strokeStyle = '#4cc9f0';
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  ctx.shadowColor = '#4cc9f0';
+  ctx.shadowBlur = 10;
+  for (const s of lines) {
+    ctx.beginPath();
+    ctx.moveTo(s.x1, s.y1);
+    ctx.lineTo(s.x2, s.y2);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // 🎯 hedef
+  const pulse = 1 + Math.sin(Date.now() / 250) * 0.12;
+  ctx.save();
+  ctx.strokeStyle = '#7bf1a8';
+  ctx.lineWidth = 4;
+  ctx.shadowColor = '#7bf1a8';
+  ctx.shadowBlur = 20;
+  ctx.beginPath();
+  ctx.arc(goal.x, goal.y, goal.r * pulse, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.font = '18px sans-serif';
+  ctx.fillText('🎯', goal.x, goal.y + 6);
+  ctx.restore();
+
+  // yerçekimi oku
+  if (state === 'playing') {
+    const ay = ball.y + ball.r + 6 + Math.sin(Date.now() / 150) * 3;
+    ctx.strokeStyle = 'rgba(239,71,111,.85)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ball.x, ay);
+    ctx.lineTo(ball.x, ay + 14);
+    ctx.moveTo(ball.x - 4, ay + 9);
+    ctx.lineTo(ball.x, ay + 14);
+    ctx.lineTo(ball.x + 4, ay + 9);
+    ctx.stroke();
+    ctx.lineWidth = 1;
+  }
+
+  // top
+  if (state === 'playing') {
+    const bg = ctx.createRadialGradient(ball.x - 4, ball.y - 5, 2, ball.x, ball.y, ball.r);
+    bg.addColorStop(0, '#ffb3c1'); bg.addColorStop(1, '#c9184a');
+    ctx.save();
+    ctx.shadowColor = '#ff5d8f'; ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+    ctx.fillStyle = bg;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // parçacıklar
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x, p.y, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+
+  // yüzen yazılar (+puan, LEVEL UP)
+  ctx.textAlign = 'center';
+  for (const f of floaters) {
+    ctx.globalAlpha = Math.max(0, f.life);
+    ctx.font = 'bold 30px sans-serif';
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, f.x, f.y);
+  }
+  ctx.globalAlpha = 1;
+
+  // duraklatma
+  if (paused && state === 'playing') {
+    ctx.fillStyle = 'rgba(5,8,18,.6)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 44px sans-serif';
+    ctx.fillText('⏸ PAUSED', W / 2, H / 2);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+reset();
+state = 'menu';
+hud();
+loop();
+</script>
+</body>
+</html>
