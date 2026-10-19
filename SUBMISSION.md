@@ -34,8 +34,8 @@ Total size: ~600 KB (limit: 250 MB ✅) | Files: 4 (limit: 1500 ✅) | Initial d
 - Single HTML5 file, no external assets, no build step
 - CrazyGames SDK v3 integrated (script in `<head>`):
   - `gameplayStart()` / `gameplayStop()` on game start / game over / pause / resume
-  - **Rewarded video ads (3 placements):** ① Menu — "Watch Ad · Start with +1 Life" (once per session) ② Game Over — "Watch Ad · +1 Life" (continue) ③ Game Over — "Watch Ad · 2x Score" (once per game over)
-  - **Midgame ad** requested at game over (death screen) with a 3-minute manual cooldown backup
+  - **Rewarded video ads (4 placements):** ① Menu — "Watch Ad · Start with +1 Life" (once per session) ② In-game HUD — "📺 +150 Ink" (opt-in, max 2 per run, grants ink bonus) ③ Game Over — "Watch Ad · +1 Life" (continue) ④ Game Over — "Watch Ad · 2x Score" (once per game over)
+  - **Midgame ads (2 natural breaks):** ① Level-up celebration (every 5 goals) ② Game over / death screen — both respect a 3-minute pacing cooldown
   - **Responsive banner** automatically shown on menu & game over screens, cleared during gameplay (best practice: banners only on menu/summary screens)
   - `muteAudio` setting fully respected (game uses WebAudio sound effects)
   - `happytime()` every 5 goals (level up) · `reportGameCompletedPercentage()` per goal · `setGameContext({score, level, combo})`
