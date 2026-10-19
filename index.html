@@ -110,6 +110,7 @@
     <span id="comboLbl"></span>
     <span>Ink: <span id="inkBar"><span id="inkFill"></span></span></span>
     <span id="lives">❤️❤️❤️</span>
+    <button id="inkAdBtn" style="background:#4cc9f0;color:#06283a;border:none;border-radius:8px;padding:4px 10px;cursor:pointer;font-weight:700;">📺 +150 Ink (2)</button>
     <button id="pauseBtn" style="background:#223;color:#e8f0ff;border:none;border-radius:8px;padding:4px 10px;cursor:pointer;">⏸ Pause</button>
   </div>
 
@@ -143,6 +144,7 @@ async function initSDK() {
     const b = $('adBtn'); if (b) b.style.display = 'none';
     const d = $('doubleBtn'); if (d) d.style.display = 'none';
     const s = $('startAdBtn'); if (s) s.style.display = 'none';
+    const i2 = $('inkAdBtn'); if (i2) i2.style.display = 'none';
   } else {
     showBanner(); // menüde banner otomatik görünür
   }
@@ -211,6 +213,7 @@ loadBest();
 let combo = 0, level = 1, floaters = [], paused = false;
 let muted = false, lastMidgameAd = 0, doubleUsed = false;
 let bonusLife = false, startLifeUsed = false;
+let inkBonus = 0, inkAdUses = 0; // ödüllü reklam mürekkep bonusu (tur başına 2 kez)
 let audioCtx = null;
 function initAudio() { if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } }
 function beep(freq, dur, type, vol) {
@@ -234,7 +237,9 @@ function reset() {
   score = 0; lives = d.lives + (bonusLife ? 1 : 0);
   bonusLife = false;
   lines = []; particles = []; floaters = [];
-  combo = 0; level = 1; gravity = d.g; inkMax = d.ink; doubleUsed = false;
+  combo = 0; level = 1; gravity = d.g; inkMax = d.ink + inkBonus; doubleUsed = false;
+  inkAdUses = 0;
+  const inkBtn = $('inkAdBtn'); if (inkBtn) { inkBtn.style.display = ''; inkBtn.textContent = '📺 +150 Ink (2)'; }
   spawnBall();
   newGoal();
   loadBest();
@@ -321,6 +326,12 @@ function update() {
       floater(W / 2, H / 2, 'LEVEL ' + level + '!', '#ffd166');
       beep(880, 0.25, 'triangle', 0.09);
       happytime();
+      // 📺 REKLAM YERLEŞİMİ #N: seviye kutlaması = doğal mola → midgame (3 dk otomatik ritim)
+      const now = Date.now();
+      if (now - lastMidgameAd > 180000) {
+        lastMidgameAd = now;
+        requestAd('midgame');
+      }
     }
     newGoal();
     reportProgress(Math.min(100, score));
@@ -462,6 +473,23 @@ $('pauseBtn').addEventListener('click', () => {
   paused = !paused;
   if (paused) { gameplayStop(); $('pauseBtn').textContent = '▶ Resume'; }
   else { gameplayStart(); $('pauseBtn').textContent = '⏸ Pause'; }
+});
+
+/* 📺 REKLAM YERLEŞİMİ: oyun içi "müsrekkep doldur" ödüllü reklamı (tur başına 2 kez) */
+$('inkAdBtn').addEventListener('click', () => {
+  if (state !== 'playing' || paused || adPlaying) return;
+  if (inkAdUses >= 2) return;
+  const ok = requestAd('rewarded', (err) => {
+    if (err) { floater(W / 2, H / 2, 'Ad not available', '#ff9aa8'); return; }
+    inkBonus += 150;
+    inkMax += 150;
+    inkAdUses++;
+    const left = 2 - inkAdUses;
+    $('inkAdBtn').textContent = left > 0 ? '📺 +150 Ink (' + left + ')' : '📺 Ink used up';
+    floater(W / 2, H / 2, '+150 INK!', '#4cc9f0');
+    beep(740, 0.18, 'triangle', 0.08);
+  });
+  if (!ok) floater(W / 2, H / 2, 'Ads unavailable', '#ff9aa8');
 });
 
 $('doubleBtn').addEventListener('click', () => {
